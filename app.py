@@ -5,7 +5,7 @@ import numpy as np
 import streamlit as st
 import torch
 
-from data.dataset import split_by_match_id, DotaMatchDataset
+from data.dataset import DotaMatchDataset
 from data.vocab import ID_TO_EVENT, PAD_TOKEN_ID
 from model.transformer import RageQuitTransformer
 from model.evaluate import evaluate_model
@@ -135,9 +135,9 @@ def load_model():
 
 @st.cache_data
 def load_data():
-    with open("data/processed/sequences.pkl", "rb") as f:
-        records = pickle.load(f)
-    return split_by_match_id(records)
+    with open("data/processed/test_sequences.pkl", "rb") as f:
+        test_recs = pickle.load(f)
+    return test_recs
 
 def extract_cls_attention(model, batch_dict, layer_idx=-1):
     """Extract [CLS] → all tokens attention from transformer last layer."""
@@ -358,7 +358,7 @@ def build_attention_summary(events_with_minutes, attn_weights):
 # ═══════════════════════════════════════════════════════════════════════
 def main():
     model, best_epoch, best_auc_pr = load_model()
-    _, _, test_recs = load_data()
+    test_recs = load_data()
 
     # Navbar
     st.markdown("""
