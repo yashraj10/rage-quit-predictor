@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+data/raw/
+data/processed/sequences.pkl
+.env
+trim_data.py
