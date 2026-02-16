@@ -2,6 +2,8 @@
 
 **A custom PyTorch transformer that predicts when a Dota 2 player is about to rage quit — before they leave the match.**
 
+## 🔴 [Live Demo](https://rage-quit-predictor.streamlit.app)
+
 This is a user retention / churn prediction problem solved with behavioral event sequence modeling. The same architecture generalizes to any product with session-level behavioral data (music listening patterns, ride-request behavior, browsing sessions).
 
 ---
