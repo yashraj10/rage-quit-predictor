@@ -95,18 +95,29 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { background-c
 .sev { display:flex; flex-direction:column; align-items:center; gap:6px; }
 .sev .time { font-family:'JetBrains Mono',monospace; font-size:0.56rem; color:#52525b; }
 .sev .pip { padding:5px 12px; border-radius:100px; font-family:'JetBrains Mono',monospace; font-size:0.68rem; font-weight:500; white-space:nowrap; border:1px solid; cursor:default; }
-.sev .pip:hover { transform:translateY(-2px); transition:transform 0.15s; }
+.sev .pip:hover { transform:translateY(-3px) scale(1.05); transition:all 0.2s ease; filter:brightness(1.2); }
 .sev .tick { width:1px; height:16px; background:#27272a; }
-.pip-pos { background:#059669; color:#ffffff; border-color:#10b981; font-weight:600; }
-.pip-neg { background:#e11d48; color:#ffffff; border-color:#fb7185; font-weight:600; }
-.pip-wrn { background:#d97706; color:#ffffff; border-color:#fbbf24; font-weight:600; }
-.pip-neu { background:#3f3f46; color:#e4e4e7; border-color:#71717a; }
+/* ── Base pills (low attention — outline style) ── */
+.pip-pos { background:rgba(0,255,136,0.08); color:#00FF88; border-color:rgba(0,255,136,0.35); font-weight:600; }
+.pip-neg { background:rgba(255,45,85,0.08); color:#FF2D55; border-color:rgba(255,45,85,0.35); font-weight:600; }
+.pip-wrn { background:rgba(255,184,0,0.08); color:#FFB800; border-color:rgba(255,184,0,0.35); font-weight:600; }
+.pip-neu { background:rgba(113,113,122,0.08); color:#a1a1aa; border-color:rgba(113,113,122,0.3); }
+/* ── High-attention pills (solid fill + glow) ── */
+.pip-pos.hi { background:#00FF88; color:#001A0D; border-color:#00FF88; box-shadow:0 0 12px rgba(0,255,136,0.5), 0 0 24px rgba(0,255,136,0.25); }
+.pip-neg.hi { background:#FF2D55; color:#ffffff; border-color:#FF2D55; box-shadow:0 0 12px rgba(255,45,85,0.6), 0 0 24px rgba(255,45,85,0.3); }
+.pip-wrn.hi { background:#FFB800; color:#1A1200; border-color:#FFB800; box-shadow:0 0 12px rgba(255,184,0,0.5), 0 0 24px rgba(255,184,0,0.25); }
+.pip-neu.hi { background:#71717a; color:#fafafa; border-color:#71717a; box-shadow:0 0 8px rgba(113,113,122,0.4); }
+/* ── Medium-attention pills (tinted fill, no glow) ── */
+.pip-pos.mid { background:rgba(0,255,136,0.2); color:#00FF88; border-color:rgba(0,255,136,0.5); }
+.pip-neg.mid { background:rgba(255,45,85,0.2); color:#FF2D55; border-color:rgba(255,45,85,0.5); }
+.pip-wrn.mid { background:rgba(255,184,0,0.2); color:#FFB800; border-color:rgba(255,184,0,0.5); }
+.pip-neu.mid { background:rgba(113,113,122,0.15); color:#d4d4d8; border-color:rgba(113,113,122,0.4); }
 .seq-dot { width:4px; height:4px; border-radius:50%; background:#27272a; margin:28px 6px 0; flex-shrink:0; }
 .seq-legend { display:flex; justify-content:center; gap:28px; margin-top:20px; font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#71717a; }
 .seq-legend .ld { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:middle; }
-.abar { width:3px; border-radius:1px; margin-top:2px; transition:height 0.2s; }
+.abar { width:3px; border-radius:2px; margin-top:2px; transition:height 0.2s; }
 .ev { display:inline-block; white-space:nowrap; }
-.ev.pip-pos { color:#10b981; } .ev.pip-neg { color:#f43f5e; } .ev.pip-wrn { color:#fbbf24; } .ev.pip-neu { color:#a1a1aa; }
+.ev.pip-pos { color:#00FF88; } .ev.pip-neg { color:#FF2D55; } .ev.pip-wrn { color:#FFB800; } .ev.pip-neu { color:#a1a1aa; }
 
 /* Insight Card */
 .ic { padding:18px; border:1px solid #27272a; background:rgba(9,9,11,0.5); }
@@ -266,32 +277,36 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
         short = short_name(name)
         attn_pct = int(attn_norm * 100)
 
-        # Visual mapping: opacity 0.25-1.0, glow 0-15px based on attention
-        opacity = 0.25 + 0.75 * attn_norm
-        glow_size = int(attn_norm * 15)
-
-        # Color map for glow
-        if name in NEGATIVE:
-            glow_color = f"rgba(244,63,94,{attn_norm * 0.6:.2f})"
-        elif name in WARNING:
-            glow_color = f"rgba(245,158,11,{attn_norm * 0.6:.2f})"
-        elif name in POSITIVE:
-            glow_color = f"rgba(16,185,129,{attn_norm * 0.4:.2f})"
+        # Attention tier → CSS modifier class
+        if attn_norm > 0.65:
+            tier = "hi"        # solid fill + neon glow
+        elif attn_norm > 0.35:
+            tier = "mid"       # tinted fill, no glow
         else:
-            glow_color = f"rgba(113,113,122,{attn_norm * 0.3:.2f})"
+            tier = ""          # outline only
 
-        glow = f"box-shadow: 0 0 {glow_size}px {glow_color};" if glow_size > 2 else ""
-        border_w = "2px" if attn_norm > 0.5 else "1px"
+        # Timestamp brightness follows attention
+        time_color = "#fafafa" if attn_norm > 0.65 else ("#71717a" if attn_norm > 0.35 else "#3f3f46")
 
-        # Attention bar below tick
-        bar_h = max(2, int(attn_norm * 24))
+        # Attention bar color (vivid, always visible)
+        if name in NEGATIVE:
+            bar_color = f"rgba(255,45,85,{max(0.3, attn_norm):.2f})"
+        elif name in WARNING:
+            bar_color = f"rgba(255,184,0,{max(0.3, attn_norm):.2f})"
+        elif name in POSITIVE:
+            bar_color = f"rgba(0,255,136,{max(0.3, attn_norm):.2f})"
+        else:
+            bar_color = f"rgba(113,113,122,{max(0.2, attn_norm):.2f})"
+
+        # Attention bar height
+        bar_h = max(4, int(attn_norm * 28))
 
         html += f"""
-        <div class="sev" style="opacity:{opacity:.2f};">
-            <div class="time">{ts}</div>
-            <div class="pip {pcls}" style="{glow} border-width:{border_w};" title="Attention: {attn_pct}%">{short}</div>
-            <div style="width:1px; height:4px; background:#27272a;"></div>
-            <div class="abar" style="height:{bar_h}px; background:{glow_color.replace(str(round(attn_norm*0.6,2)), '0.8')};"></div>
+        <div class="sev">
+            <div class="time" style="color:{time_color};">{ts}</div>
+            <div class="abar" style="height:{bar_h}px; background:{bar_color};"></div>
+            <div class="pip {pcls} {tier}" title="Attention: {attn_pct}%">{short}</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:0.55rem; color:{bar_color}; margin-top:2px;">{attn_pct}%</div>
         </div>
         """
         if i < len(evts) - 1:
@@ -302,9 +317,9 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
     # Legend
     html += """
     <div class="seq-legend">
-        <span><span class="ld" style="background:#10b981;"></span> Positive</span>
-        <span><span class="ld" style="background:#f43f5e;"></span> Negative</span>
-        <span><span class="ld" style="background:#f59e0b;"></span> Warning</span>
+        <span><span class="ld" style="background:#00FF88; box-shadow:0 0 6px rgba(0,255,136,0.5);"></span> Positive</span>
+        <span><span class="ld" style="background:#FF2D55; box-shadow:0 0 6px rgba(255,45,85,0.5);"></span> Negative</span>
+        <span><span class="ld" style="background:#FFB800; box-shadow:0 0 6px rgba(255,184,0,0.5);"></span> Warning</span>
         <span style="margin-left:16px; color:#52525b;">▮ = model attention intensity</span>
     </div>
     """
@@ -338,15 +353,24 @@ def build_attention_summary(events_with_minutes, attn_weights):
         pct = int((avg / a_max) * 100)
         pcls = pill_class(name)
         short = short_name(name)
+        # Bar color matches event type
+        if name in NEGATIVE:
+            bar_clr = "#FF2D55"
+        elif name in WARNING:
+            bar_clr = "#FFB800"
+        elif name in POSITIVE:
+            bar_clr = "#00FF88"
+        else:
+            bar_clr = "#71717a"
         html += f"""
         <div style="background:#18181b; border:1px solid #27272a; padding:8px 14px; display:flex; align-items:center; gap:10px; min-width:140px;">
             <span class="ev {pcls}" style="font-size:0.65rem; padding:3px 8px; border-radius:100px; border:1px solid;">{short}</span>
             <div style="flex:1;">
                 <div style="background:#27272a; height:4px; border-radius:2px; overflow:hidden;">
-                    <div style="width:{pct}%; height:100%; background:#8b5cf6; border-radius:2px;"></div>
+                    <div style="width:{pct}%; height:100%; background:{bar_clr}; border-radius:2px; box-shadow:0 0 6px {bar_clr}40;"></div>
                 </div>
             </div>
-            <span style="font-family:'JetBrains Mono',monospace; font-size:0.65rem; color:#71717a;">{pct}%</span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:0.65rem; color:{bar_clr};">{pct}%</span>
         </div>
         """
     html += '</div>'
