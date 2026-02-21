@@ -1,4 +1,4 @@
-"""Phase 5: Generate visualizations — Figma zinc palette."""
+"""Phase 5: Generate visualizations — Figma zinc palette + single source of truth."""
 import json
 import pickle
 from pathlib import Path
@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from data.dataset import split_by_match_id, DotaMatchDataset
+from data.dataset import DotaMatchDataset
 from data.vocab import VOCAB_SIZE, NUM_CONTINUOUS_FEATURES, ID_TO_EVENT, PAD_TOKEN_ID
 from model.transformer import RageQuitTransformer
 from model.evaluate import evaluate_model, get_roc_curve_data, get_pr_curve_data
@@ -135,7 +135,7 @@ def plot_confusion_matrix(labels, probs, save_dir="results/figures"):
     ax.set_yticklabels(["No Quit", "Rage Quit"], fontsize=13)
     ax.set_xlabel("Predicted", fontsize=13, labelpad=10)
     ax.set_ylabel("Actual", fontsize=13, labelpad=10)
-    ax.set_title(f"Confusion Matrix  ·  threshold = {thresh:.3f}", pad=15)
+    ax.set_title(f"Confusion Matrix  ·  threshold = {thresh:.6f}", pad=15)    
     ax.tick_params(length=0)
 
     plt.savefig(f"{save_dir}/confusion_matrix.png", dpi=150, bbox_inches="tight", facecolor=DARK_BG)
@@ -143,9 +143,15 @@ def plot_confusion_matrix(labels, probs, save_dir="results/figures"):
     print("Saved confusion_matrix.png")
 
 
-def plot_model_comparison(save_dir="results/figures"):
+def plot_model_comparison(transformer_metrics, save_dir="results/figures"):
     models = ["LogReg", "Transformer"]
-    data = {"AUC-ROC": [0.884, 0.882], "AUC-PR": [0.173, 0.192], "F1 Score": [0.283, 0.356], "Precision": [0.197, 0.289]}
+    tm = transformer_metrics
+    data = {
+        "AUC-ROC": [0.884, tm["auc_roc"]],
+        "AUC-PR": [0.173, tm["auc_pr"]],
+        "F1 Score": [0.283, tm["f1"]],
+        "Precision": [0.197, tm["precision"]],
+    }
     colors = [TEXT_SECONDARY, VIOLET]
 
     fig, axes = plt.subplots(1, 4, figsize=(18, 5), dpi=150)
@@ -192,13 +198,20 @@ def plot_event_importance(event_importance, save_dir="results/figures"):
     print("Saved event_importance.png")
 
 
-def plot_summary_card(save_dir="results/figures"):
+def plot_summary_card(transformer_metrics, save_dir="results/figures"):
+    tm = transformer_metrics
     fig, ax = plt.subplots(figsize=(14, 4), dpi=150)
     ax.set_xlim(0, 10); ax.set_ylim(0, 3); ax.axis("off")
     ax.text(5, 2.6, "RAGE QUIT PREDICTOR", fontsize=24, ha="center", fontweight="bold", color=TEXT_PRIMARY)
     ax.text(5, 2.2, "Custom Transformer  ·  Behavioral Sequence Classification  ·  Dota 2",
             fontsize=11, ha="center", color=TEXT_SECONDARY, style="italic")
-    stats = [("30K","Sequences",CYAN),("849K","Parameters",VIOLET),("0.882","AUC-ROC",ROSE),("0.356","F1 Score",EMERALD),("22","Tokens",AMBER)]
+    stats = [
+        ("30K", "Sequences", CYAN),
+        ("849K", "Parameters", VIOLET),
+        (f"{tm['auc_roc']:.3f}", "AUC-ROC", ROSE),
+        (f"{tm['f1']:.3f}", "F1 Score", EMERALD),
+        ("22", "Tokens", AMBER),
+    ]
     for i, (val, label, color) in enumerate(stats):
         x = 0.9 + i * 1.85
         rect = plt.Rectangle((x-0.65,0.25),1.5,1.6,linewidth=1.5,edgecolor=color,facecolor=CARD_BG,alpha=0.9,zorder=2)
@@ -215,9 +228,8 @@ def main():
     Path(save_dir).mkdir(parents=True, exist_ok=True)
 
     print("Loading data...")
-    with open("data/processed/sequences.pkl", "rb") as f:
-        records = pickle.load(f)
-    _, _, test_recs = split_by_match_id(records)
+    with open("data/processed/test_sequences.pkl", "rb") as f:
+        test_recs = pickle.load(f)
     test_dataset = DotaMatchDataset(test_recs, max_seq_len=256)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
 
@@ -229,12 +241,38 @@ def main():
     metrics = evaluate_model(labels, probs)
     print(f"Test AUC-ROC: {metrics['auc_roc']:.4f}, AUC-PR: {metrics['auc_pr']:.4f}, F1: {metrics['f1']:.4f}")
 
+    # ── Single source of truth: save all metrics to JSON ──
+    Path("results/metrics").mkdir(parents=True, exist_ok=True)
+    truth = {
+        "auc_roc": round(float(metrics["auc_roc"]), 4),
+        "auc_pr": round(float(metrics["auc_pr"]), 4),
+        "f1": round(float(metrics["f1"]), 4),
+        "precision": round(float(metrics["precision"]), 4),
+        "recall": round(float(metrics["recall"]), 4),
+        "optimal_threshold": round(float(metrics["optimal_threshold"]), 6),
+        "total_samples": int(len(labels)),
+        "total_positive": int(labels.sum()),
+        "total_negative": int(len(labels) - labels.sum()),
+        "positive_rate": round(float(labels.mean()), 4),
+    }
+    # Confusion matrix at optimal threshold
+    preds_at_thresh = (probs >= metrics["optimal_threshold"]).astype(int)
+    truth["tp"] = int(((preds_at_thresh == 1) & (labels == 1)).sum())
+    truth["fp"] = int(((preds_at_thresh == 1) & (labels == 0)).sum())
+    truth["fn"] = int(((preds_at_thresh == 0) & (labels == 1)).sum())
+    truth["tn"] = int(((preds_at_thresh == 0) & (labels == 0)).sum())
+    truth["accuracy"] = round((truth["tp"] + truth["tn"]) / truth["total_samples"], 4)
+
+    with open("results/metrics/test_metrics.json", "w") as f:
+        json.dump(truth, f, indent=2)
+    print(f"Saved test_metrics.json (positive rate: {truth['positive_rate']:.2%})")
+
     print("\n1. ROC/PR curves...")
     plot_roc_pr_curves(labels, probs, save_dir)
     print("2. Confusion matrix...")
     plot_confusion_matrix(labels, probs, save_dir)
     print("3. Model comparison...")
-    plot_model_comparison(save_dir)
+    plot_model_comparison(metrics, save_dir)
     print("4. Event importance...")
     base_avg = probs.mean()
     event_importance = {}
@@ -246,8 +284,9 @@ def main():
     event_importance = dict(sorted(event_importance.items(), key=lambda x: x[1], reverse=True))
     plot_event_importance(event_importance, save_dir)
     print("5. Summary card...")
-    plot_summary_card(save_dir)
+    plot_summary_card(metrics, save_dir)
     print(f"\nAll figures saved to {save_dir}/")
+    print(f"Metrics JSON saved to results/metrics/test_metrics.json")
 
 
 if __name__ == "__main__":

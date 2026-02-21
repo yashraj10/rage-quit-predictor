@@ -1,4 +1,5 @@
 """Phase 6: Rage Quit Predictor — Real functionality + Figma visual design."""
+import json
 import pickle
 from pathlib import Path
 import numpy as np
@@ -44,7 +45,7 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { background-c
 .nav-badge { font-size:0.6rem; color:#71717a; background:#18181b; border:1px solid #27272a; padding:2px 8px; border-radius:4px; margin-left:8px; }
 .nav-sub { font-family:'Inter',sans-serif; font-size:0.78rem; color:#52525b; margin-top:2px; }
 
-/* Metric Card — Figma MetricCard with left accent bar */
+/* Metric Card */
 .mc { background:#18181b; border:1px solid #27272a; padding:18px 20px; position:relative; overflow:hidden; }
 .mc .bar { position:absolute; left:0; top:0; bottom:0; width:3px; }
 .mc .inn { padding-left:12px; }
@@ -87,7 +88,7 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { background-c
 .dcd.rose .q { color:#f43f5e; } .dcd.violet .q { color:#8b5cf6; } .dcd.amber .q { color:#f59e0b; }
 .dcd .a { font-family:'Inter',sans-serif; font-size:0.85rem; color:#a1a1aa; line-height:1.6; }
 
-/* ── Timeline Sequence (Figma SequenceExplorer) ── */
+/* ── Timeline Sequence ── */
 .seq-outer { background:#18181b; border:1px solid #27272a; padding:24px; }
 .seq-title { font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:#71717a; text-transform:uppercase; letter-spacing:2px; margin-bottom:24px; }
 .seq-scroll { overflow-x:auto; padding-bottom:8px; }
@@ -97,17 +98,17 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { background-c
 .sev .pip { padding:5px 12px; border-radius:100px; font-family:'JetBrains Mono',monospace; font-size:0.68rem; font-weight:500; white-space:nowrap; border:1px solid; cursor:default; }
 .sev .pip:hover { transform:translateY(-3px) scale(1.05); transition:all 0.2s ease; filter:brightness(1.2); }
 .sev .tick { width:1px; height:16px; background:#27272a; }
-/* ── Base pills (low attention — outline style) ── */
+/* Low attention — outline */
 .pip-pos { background:rgba(0,255,136,0.08); color:#00FF88; border-color:rgba(0,255,136,0.35); font-weight:600; }
 .pip-neg { background:rgba(255,45,85,0.08); color:#FF2D55; border-color:rgba(255,45,85,0.35); font-weight:600; }
 .pip-wrn { background:rgba(255,184,0,0.08); color:#FFB800; border-color:rgba(255,184,0,0.35); font-weight:600; }
 .pip-neu { background:rgba(113,113,122,0.08); color:#a1a1aa; border-color:rgba(113,113,122,0.3); }
-/* ── High-attention pills (solid fill + glow) ── */
+/* High attention — solid + glow */
 .pip-pos.hi { background:#00FF88; color:#001A0D; border-color:#00FF88; box-shadow:0 0 12px rgba(0,255,136,0.5), 0 0 24px rgba(0,255,136,0.25); }
 .pip-neg.hi { background:#FF2D55; color:#ffffff; border-color:#FF2D55; box-shadow:0 0 12px rgba(255,45,85,0.6), 0 0 24px rgba(255,45,85,0.3); }
 .pip-wrn.hi { background:#FFB800; color:#1A1200; border-color:#FFB800; box-shadow:0 0 12px rgba(255,184,0,0.5), 0 0 24px rgba(255,184,0,0.25); }
 .pip-neu.hi { background:#71717a; color:#fafafa; border-color:#71717a; box-shadow:0 0 8px rgba(113,113,122,0.4); }
-/* ── Medium-attention pills (tinted fill, no glow) ── */
+/* Medium attention — tinted */
 .pip-pos.mid { background:rgba(0,255,136,0.2); color:#00FF88; border-color:rgba(0,255,136,0.5); }
 .pip-neg.mid { background:rgba(255,45,85,0.2); color:#FF2D55; border-color:rgba(255,45,85,0.5); }
 .pip-wrn.mid { background:rgba(255,184,0,0.2); color:#FFB800; border-color:rgba(255,184,0,0.5); }
@@ -134,7 +135,7 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { background-c
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# DATA & MODEL — original logic preserved
+# DATA & MODEL
 # ═══════════════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_model():
@@ -150,57 +151,71 @@ def load_data():
         test_recs = pickle.load(f)
     return test_recs
 
+@st.cache_data
+def load_metrics():
+    """Load precomputed test metrics — single source of truth."""
+    metrics_path = Path("results/metrics/test_metrics.json")
+    if metrics_path.exists():
+        with open(metrics_path) as f:
+            return json.load(f)
+    return None
+
 def extract_cls_attention(model, batch_dict, layer_idx=-1):
     """Extract [CLS] → all tokens attention from transformer last layer."""
     model.eval()
     attention_maps = []
+
+    def make_hook(maps_list):
+        def hook_fn(module, args, kwargs, output):
+            # Force a second call with need_weights=True to get attention
+            with torch.no_grad():
+                q, k, v = args[0], args[1], args[2]
+                _, attn_weights = module.forward(
+                    q, k, v,
+                    key_padding_mask=kwargs.get("key_padding_mask", None),
+                    need_weights=True,
+                    average_attn_weights=False,
+                )
+                if attn_weights is not None:
+                    maps_list.append(attn_weights.detach())
+            return output
+        return hook_fn
+
     hooks = []
     for layer in model.transformer_encoder.layers:
-        orig_forward = layer.self_attn.forward
-        def make_hook(orig_fn, maps_list):
-            def hooked(*args, **kwargs):
-                kwargs["need_weights"] = True
-                kwargs["average_attn_weights"] = False
-                out = orig_fn(*args, **kwargs)
-                if isinstance(out, tuple) and len(out) == 2:
-                    maps_list.append(out[1].detach())
-                return out
-            return hooked
-        layer.self_attn.forward = make_hook(orig_forward, attention_maps)
-        hooks.append((layer.self_attn, orig_forward))
+        h = layer.self_attn.register_forward_hook(make_hook(attention_maps), with_kwargs=True)
+        hooks.append(h)
+
     with torch.no_grad():
         _ = model(batch_dict["event_ids"], batch_dict["continuous_features"],
                   batch_dict["minutes"], batch_dict["attention_mask"])
-    for attn_module, orig_fn in hooks:
-        attn_module.forward = orig_fn
+
+    for h in hooks:
+        h.remove()
+
     if not attention_maps:
         return None
+
     attn = attention_maps[layer_idx]   # (B, heads, seq, seq)
     attn_avg = attn.mean(dim=1)        # (B, seq, seq)
     cls_attn = attn_avg[:, 0, :]       # (B, seq) — CLS attending to all
     return cls_attn.numpy()
 
 def predict_with_attention(model, record):
-    """Run inference and return (probability, per-token attention weights)."""
     dataset = DotaMatchDataset([record], max_seq_len=256)
     batch = dataset[0]
     single = {k: v.unsqueeze(0) for k, v in batch.items()}
-
-    # Get prediction
     with torch.no_grad():
         logits = model(
             single["event_ids"], single["continuous_features"],
             single["minutes"], single["attention_mask"],
         ).squeeze()
         prob = torch.sigmoid(logits).item()
-
-    # Get attention
     cls_attn = extract_cls_attention(model, single)
     attn_weights = cls_attn[0] if cls_attn is not None else None
     return prob, attn_weights
 
 def get_events_with_minutes(record):
-    """Extract (event_name, minute, seq_position) triples, skip padding/CLS/SEP and noise."""
     SKIP = {"[CLS]", "[SEP]", "SMALL_PURCHASE"}
     result = []
     for pos, (eid, minute) in enumerate(zip(record["event_ids"], record["minutes"])):
@@ -223,7 +238,6 @@ def pill_class(e):
     return "pip-neu"
 
 def short_name(e):
-    """Shorten event names for pill display."""
     renames = {
         "TEAM_FIGHT_WIN": "TF Win", "TEAM_FIGHT_LOSS": "TF Loss",
         "GOLD_SPIKE_UP": "Gold ↑", "GOLD_SPIKE_DOWN": "Gold ↓",
@@ -245,16 +259,10 @@ def mcard(label, value, delta, accent_color, delta_class):
     return f'<div class="mc"><div class="bar" style="background:{accent_color}"></div><div class="inn"><div class="lbl">{label}</div><div class="val">{value}</div>{dlt}</div></div>'
 
 def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
-    """Build horizontal timeline with attention glow overlay.
-    
-    Each pill's opacity and glow intensity is driven by the model's
-    actual [CLS] attention weight for that token position.
-    """
     evts = events_with_minutes[:max_events]
     if not evts:
         return '<div style="color:#52525b; font-style:italic;">No events</div>'
 
-    # Get attention values for these positions
     attns = []
     for name, minute, pos in evts:
         if attn_weights is not None and pos < len(attn_weights):
@@ -262,7 +270,6 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
         else:
             attns.append(0.0)
 
-    # Normalize to 0-1 for rendering
     a_max = max(attns) if attns and max(attns) > 0 else 1.0
     normed = [a / a_max for a in attns]
 
@@ -271,24 +278,21 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
     html += '<div class="seq-scroll"><div class="seq-track">'
 
     for i, ((name, minute, pos), attn_norm) in enumerate(zip(evts, normed)):
-        secs = (pos * 7) % 60  # deterministic pseudo-seconds
+        secs = (pos * 7) % 60
         ts = f"{minute:02d}:{secs:02d}"
         pcls = pill_class(name)
         short = short_name(name)
         attn_pct = int(attn_norm * 100)
 
-        # Attention tier → CSS modifier class
         if attn_norm > 0.65:
-            tier = "hi"        # solid fill + neon glow
+            tier = "hi"
         elif attn_norm > 0.35:
-            tier = "mid"       # tinted fill, no glow
+            tier = "mid"
         else:
-            tier = ""          # outline only
+            tier = ""
 
-        # Timestamp brightness follows attention
         time_color = "#fafafa" if attn_norm > 0.65 else ("#71717a" if attn_norm > 0.35 else "#3f3f46")
 
-        # Attention bar color (vivid, always visible)
         if name in NEGATIVE:
             bar_color = f"rgba(255,45,85,{max(0.3, attn_norm):.2f})"
         elif name in WARNING:
@@ -298,7 +302,6 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
         else:
             bar_color = f"rgba(113,113,122,{max(0.2, attn_norm):.2f})"
 
-        # Attention bar height
         bar_h = max(4, int(attn_norm * 28))
 
         html += f"""
@@ -313,8 +316,6 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
             html += '<div class="seq-dot"></div>'
 
     html += '</div></div>'
-
-    # Legend
     html += """
     <div class="seq-legend">
         <span><span class="ld" style="background:#00FF88; box-shadow:0 0 6px rgba(0,255,136,0.5);"></span> Positive</span>
@@ -327,7 +328,6 @@ def build_attention_timeline(events_with_minutes, attn_weights, max_events=40):
     return html
 
 def build_attention_summary(events_with_minutes, attn_weights):
-    """Build an attention summary: which event TYPES got the most attention."""
     type_attn = {}
     type_count = {}
     for name, minute, pos in events_with_minutes:
@@ -353,7 +353,6 @@ def build_attention_summary(events_with_minutes, attn_weights):
         pct = int((avg / a_max) * 100)
         pcls = pill_class(name)
         short = short_name(name)
-        # Bar color matches event type
         if name in NEGATIVE:
             bar_clr = "#FF2D55"
         elif name in WARNING:
@@ -383,6 +382,7 @@ def build_attention_summary(events_with_minutes, attn_weights):
 def main():
     model, best_epoch, best_auc_pr = load_model()
     test_recs = load_data()
+    m = load_metrics()
 
     # Navbar
     st.markdown("""
@@ -398,29 +398,46 @@ def main():
     tab1, tab2, tab3 = st.tabs(["📈 Performance Metrics", "◇ Sequence Explorer", "⚙ Model Architecture"])
 
     # ══════════════════════════════════════════════════════════════════
-    # TAB 1: PERFORMANCE — full-width charts
+    # TAB 1: PERFORMANCE — all numbers from test_metrics.json
     # ══════════════════════════════════════════════════════════════════
     with tab1:
-        # Risk banner
-        st.markdown("""
-        <div class="rb high">
-            <div class="rl"><div class="pdot r"></div> RAGE QUIT RISK: HIGH</div>
-            <div class="rr">Probability: 89.2%</div>
-        </div>
-        """, unsafe_allow_html=True)
+        if not m:
+            st.warning("⚠ Run `python generate_results.py` first to compute metrics.")
 
-        # 5 metric cards
+        # 5 metric cards from JSON
         c1,c2,c3,c4,c5 = st.columns(5)
-        for col, args in zip([c1,c2,c3,c4,c5], [
-            ("Model Accuracy","89.2%","+12%","#10b981","dlt-g"),
-            ("F1 Score","0.861","+0.15","#8b5cf6","dlt-g"),
-            ("Inference Time","14ms","-2ms","#06b6d4","dlt-c"),
-            ("False Positives","1.8%","-0.5%","#f43f5e","dlt-r"),
-            ("Active Sessions","1,240","Live","#f59e0b","dlt-a"),
-        ]):
+        if m:
+            cards = [
+                ("AUC-ROC", f"{m['auc_roc']:.3f}", "", "#10b981", ""),
+                ("AUC-PR", f"{m['auc_pr']:.3f}", "", "#8b5cf6", ""),
+                ("F1 Score", f"{m['f1']:.3f}", "", "#06b6d4", ""),
+                ("Precision", f"{m['precision']:.3f}", "", "#f43f5e", ""),
+                ("Recall", f"{m['recall']:.3f}", "", "#f59e0b", ""),
+            ]
+        else:
+            cards = [
+                ("AUC-ROC", "—", "", "#10b981", ""),
+                ("AUC-PR", "—", "", "#8b5cf6", ""),
+                ("F1 Score", "—", "", "#06b6d4", ""),
+                ("Precision", "—", "", "#f43f5e", ""),
+                ("Recall", "—", "", "#f59e0b", ""),
+            ]
+        for col, args in zip([c1,c2,c3,c4,c5], cards):
             with col: st.markdown(mcard(*args), unsafe_allow_html=True)
 
-        # ROC/PR — full width (this is a wide combined image)
+        # Dataset stats bar
+        if m:
+            st.markdown(f"""
+            <div style="display:flex; gap:24px; padding:12px 24px; font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#71717a; border-bottom:1px solid #27272a; margin-bottom:16px;">
+                <span>Test samples: <span style="color:#e4e4e7;">{m['total_samples']:,}</span></span>
+                <span>Positives: <span style="color:#f43f5e;">{m['total_positive']}</span></span>
+                <span>Negatives: <span style="color:#10b981;">{m['total_negative']:,}</span></span>
+                <span>Positive rate: <span style="color:#f59e0b;">{m['positive_rate']:.2%}</span></span>
+                <span>Threshold: <span style="color:#8b5cf6;">{m['optimal_threshold']:.3f}</span></span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ROC/PR — full width
         if Path("results/figures/roc_pr_curves.png").exists():
             st.image("results/figures/roc_pr_curves.png")
 
@@ -437,42 +454,51 @@ def main():
         if Path("results/figures/summary_card.png").exists():
             st.image("results/figures/summary_card.png")
 
-        # Comparison table + decision cards below charts
+        # Comparison table + evaluation notes
         t1, t2 = st.columns([1, 1])
         with t1:
             st.markdown('<div class="sh">Model Comparison</div>', unsafe_allow_html=True)
-            st.markdown("""
-            <table class="ct">
-                <tr><th style="text-align:left">Model</th><th>Acc</th><th>Prec</th><th>Recall</th><th>F1</th><th>AUC</th><th>Inf</th></tr>
-                <tr>
-                    <td class="nm">Logistic Reg</td>
-                    <td>0.724</td><td>0.680</td><td>0.612</td><td>0.644</td><td>0.751</td><td class="w">1ms</td>
-                </tr>
-                <tr style="background:rgba(39,39,42,0.2)">
-                    <td class="tf">● Transformer</td>
-                    <td class="w">0.892</td><td class="w">0.845</td><td class="w">0.878</td>
-                    <td class="w">0.861</td><td class="w">0.912</td><td>14ms</td>
-                </tr>
-            </table>
-            """, unsafe_allow_html=True)
+            if m:
+                st.markdown(f"""
+                <table class="ct">
+                    <tr><th style="text-align:left">Model</th><th>Prec</th><th>Recall</th><th>F1</th><th>AUC-ROC</th><th>AUC-PR</th></tr>
+                    <tr>
+                        <td class="nm">Logistic Reg</td>
+                        <td>0.197</td><td>0.283</td><td>0.283</td><td>0.884</td><td>0.173</td>
+                    </tr>
+                    <tr style="background:rgba(39,39,42,0.2)">
+                        <td class="tf">● Transformer</td>
+                        <td class="w">{m['precision']:.3f}</td><td class="w">{m['recall']:.3f}</td>
+                        <td class="w">{m['f1']:.3f}</td><td class="w">{m['auc_roc']:.3f}</td><td class="w">{m['auc_pr']:.3f}</td>
+                    </tr>
+                </table>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("Run generate_results.py to compute metrics")
 
         with t2:
-            st.markdown('<div class="sh">System Decisions</div>', unsafe_allow_html=True)
-            for cls, q, a in [
-                ("rose","Why flag session #8921?","High density of 'XP_FALLING_BEHIND' events (n=12) combined with 'ACTION_DROUGHT' > 3 in < 2 mins."),
-                ("violet","Confidence Level?","89.2% probability of disconnect within 60s. Threshold set at 85%."),
-                ("amber","Recommended Action?","Issue preemptive warning. Flag for matchmaking penalty review."),
-            ]:
-                st.markdown(f'<div class="dcd {cls}"><div class="q">{q}</div><div class="a">{a}</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="sh">Evaluation Notes</div>', unsafe_allow_html=True)
+            if m:
+                for cls, q, a in [
+                    ("rose", "Class Imbalance",
+                     f"Positive rate is {m['positive_rate']:.2%} ({m['total_positive']} rage quits out of {m['total_samples']:,} samples). "
+                     "The strict 3-part label (abandoned + early leave + losing team) creates severe imbalance."),
+                    ("violet", "Why AUC-PR matters more",
+                     f"AUC-ROC ({m['auc_roc']:.3f}) looks strong but is inflated by {m['total_negative']:,} easy negatives. "
+                     f"AUC-PR ({m['auc_pr']:.3f}) reveals the real precision-recall tradeoff on the minority class."),
+                    ("amber", "Confusion Matrix",
+                     f"At threshold {m['optimal_threshold']:.3f}: {m['tp']} TP, {m['fp']} FP, {m['fn']} FN, {m['tn']:,} TN. "
+                     f"Accuracy: {m['accuracy']:.1%}."),
+                ]:
+                    st.markdown(f'<div class="dcd {cls}"><div class="q">{q}</div><div class="a">{a}</div></div>', unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════
-    # TAB 2: SEQUENCE EXPLORER — attention overlay on real data
+    # TAB 2: SEQUENCE EXPLORER
     # ══════════════════════════════════════════════════════════════════
     with tab2:
         rage_quit_recs = [r for r in test_recs if r["label"] == 1]
         normal_recs = [r for r in test_recs if r["label"] == 0]
 
-        # ── Compact control bar ──
         ctrl1, ctrl2 = st.columns([1, 3])
         with ctrl1:
             sample_type = st.radio("Show:", ["Rage Quit Examples", "Normal Game Examples"],
@@ -490,7 +516,6 @@ def main():
             prob, attn_weights = predict_with_attention(model, record)
             events = get_events_with_minutes(record)
 
-            # ── Risk banner ──
             if prob > 0.5:
                 cls, dot, txt = "high", "r", "HIGH"
             elif prob > 0.2:
@@ -512,14 +537,13 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-            # ── Attention-weighted timeline ──
             st.markdown(build_attention_timeline(events, attn_weights, max_events=35), unsafe_allow_html=True)
 
-            # ── Attention summary: which event types got the most focus ──
+       
             st.markdown('<div class="sh" style="margin-top:20px;">Model Attention Focus</div>', unsafe_allow_html=True)
-            st.markdown(build_attention_summary(events, attn_weights), unsafe_allow_html=True)
-
-        # Insight cards
+            summary_html = build_attention_summary(events, attn_weights)
+            if summary_html:
+                st.html(summary_html)
         st.markdown("<br>", unsafe_allow_html=True)
         ic1, ic2, ic3 = st.columns(3)
         with ic1:
@@ -529,82 +553,27 @@ def main():
         with ic3:
             st.markdown('<div class="ic"><h4>Why Attention Matters</h4><p>Unlike feature importance in tree models, attention shows which specific events in which order the model uses. It\'s sequence-level interpretability.</p></div>', unsafe_allow_html=True)
 
-        # ── Event Glossary ──
         st.markdown('<div class="sh">Event Dictionary</div>', unsafe_allow_html=True)
         st.markdown("""
         <div style="background:#18181b; border:1px solid #27272a; padding:24px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px 32px; font-family:'JetBrains Mono',monospace; font-size:0.78rem;">
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">LH High</span>
-                <span style="color:#71717a;">Last Hits Above Avg</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">LH Low</span>
-                <span style="color:#71717a;">Last Hits Below Avg</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#d97706; font-weight:600;">APM ↓</span>
-                <span style="color:#71717a;">Action Drought</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">APM ↑</span>
-                <span style="color:#71717a;">Action Burst</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#d97706; font-weight:600;">XP Behind</span>
-                <span style="color:#71717a;">XP Falling Behind Team</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Gold ↑</span>
-                <span style="color:#71717a;">Gold Spike Up (+500/min)</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">Gold ↓</span>
-                <span style="color:#71717a;">Gold Spike Down (died)</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Kill</span>
-                <span style="color:#71717a;">Player Kill</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">Death</span>
-                <span style="color:#71717a;">Player Death</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Assist</span>
-                <span style="color:#71717a;">Kill Assist</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">Deaths x3</span>
-                <span style="color:#71717a;">3+ Deaths Without Kill</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Multi Kill</span>
-                <span style="color:#71717a;">2+ Kills in 15 Seconds</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">TF Win</span>
-                <span style="color:#71717a;">Team Fight Won</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">TF Loss</span>
-                <span style="color:#71717a;">Team Fight Lost</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Tower ↑</span>
-                <span style="color:#71717a;">Team Took Tower</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#e11d48; font-weight:600;">Tower ↓</span>
-                <span style="color:#71717a;">Team Lost Tower</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#059669; font-weight:600;">Big Buy</span>
-                <span style="color:#71717a;">Item Purchase &gt;2000g</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;">
-                <span style="color:#d97706; font-weight:600;">Idle</span>
-                <span style="color:#71717a;">No Action &gt;30 Seconds</span>
-            </div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">LH High</span><span style="color:#71717a;">Last Hits Above Avg</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">LH Low</span><span style="color:#71717a;">Last Hits Below Avg</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FFB800; font-weight:600;">APM ↓</span><span style="color:#71717a;">Action Drought</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">APM ↑</span><span style="color:#71717a;">Action Burst</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FFB800; font-weight:600;">XP Behind</span><span style="color:#71717a;">XP Falling Behind Team</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Gold ↑</span><span style="color:#71717a;">Gold Spike Up (+500/min)</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">Gold ↓</span><span style="color:#71717a;">Gold Spike Down (died)</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Kill</span><span style="color:#71717a;">Player Kill</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">Death</span><span style="color:#71717a;">Player Death</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Assist</span><span style="color:#71717a;">Kill Assist</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">Deaths x3</span><span style="color:#71717a;">3+ Deaths Without Kill</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Multi Kill</span><span style="color:#71717a;">2+ Kills in 15 Seconds</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">TF Win</span><span style="color:#71717a;">Team Fight Won</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">TF Loss</span><span style="color:#71717a;">Team Fight Lost</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Tower ↑</span><span style="color:#71717a;">Team Took Tower</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FF2D55; font-weight:600;">Tower ↓</span><span style="color:#71717a;">Team Lost Tower</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#00FF88; font-weight:600;">Big Buy</span><span style="color:#71717a;">Item Purchase &gt;2000g</span></div>
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e1e22;"><span style="color:#FFB800; font-weight:600;">Idle</span><span style="color:#71717a;">No Action &gt;30 Seconds</span></div>
         </div>
         """, unsafe_allow_html=True)
 

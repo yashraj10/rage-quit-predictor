@@ -1,0 +1,17 @@
+{
+  "auc_roc": 0.8822,
+  "auc_pr": 0.1915,
+  "f1": 0.3562,
+  "precision": 0.2889,
+  "recall": 0.4643,
+  "optimal_threshold": 0.99999,
+  "total_samples": 4520,
+  "total_positive": 28,
+  "total_negative": 4492,
+  "positive_rate": 0.0062,
+  "tp": 13,
+  "fp": 32,
+  "fn": 15,
+  "tn": 4460,
+  "accuracy": 0.9896
+}
