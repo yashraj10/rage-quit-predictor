@@ -1,0 +1,8 @@
+[server]
+maxUploadSize = 5
+
+[runner]
+magicEnabled = false
+
+[browser]
+gatherUsageStats = false
