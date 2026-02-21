@@ -4,6 +4,8 @@
 
 ## 🔴 [Live Demo](https://rage-quit-predictor.streamlit.app)
 
+> App may take ~30s to wake up on first load (Streamlit Cloud free tier).
+
 This is a user retention / churn prediction problem solved with behavioral event sequence modeling. The same architecture generalizes to any product with session-level behavioral data (music listening patterns, ride-request behavior, browsing sessions).
 
 ---
@@ -89,8 +91,11 @@ The live app includes three views:
 - Three-tier visualization: solid glow (high attention), tinted fill (medium), outline (low)
 - Color coding: green (positive events), red (negative), yellow (warning signals)
 - "What's Happening" narrative panel explaining each prediction in plain English
+- Dynamic "What the Model Learns" card that updates based on actual attention data per sequence
 - Rage quit examples sorted by model confidence — true positives first
 - Reading guide banner for non-technical viewers
+
+> Demo displays all 28 rage quit examples and a 50-sample subset of normal games to fit Streamlit Cloud's free tier memory limits. All metrics are computed on the full 4,520-sample test set.
 
 ### Model Architecture
 - Visual architecture diagram with design decision explanations
