@@ -580,26 +580,26 @@ def main():
 
         # ── FIX 3: Sort rage quits so true positives (model got it right) appear first ──
         # Quick pre-score all rage quit records to sort by predicted probability descending
-        @st.cache_data
-        def sort_rage_quits_by_confidence(_model, _recs):
-            """Score all rage quit records and return sorted by model confidence (highest first)."""
-            scored = []
-            for rec in _recs:
-                dataset = DotaMatchDataset([rec], max_seq_len=256)
-                batch = dataset[0]
-                single = {k: v.unsqueeze(0) for k, v in batch.items()}
-                with torch.no_grad():
-                    logit = _model(
-                        single["event_ids"], single["continuous_features"],
-                        single["minutes"], single["attention_mask"],
-                    ).squeeze()
-                    prob = torch.sigmoid(logit).item()
-                scored.append((prob, rec))
-            # Sort by probability descending — true positives (high prob) first
-            scored.sort(key=lambda x: x[0], reverse=True)
-            return [rec for _, rec in scored]
-
-        rage_quit_recs = sort_rage_quits_by_confidence(model, rage_quit_recs)
+        # @st.cache_data
+        # def sort_rage_quits_by_confidence(_model, _recs):
+        #     """Score all rage quit records and return sorted by model confidence (highest first)."""
+        #     scored = []
+        #     for rec in _recs:
+        #         dataset = DotaMatchDataset([rec], max_seq_len=256)
+        #         batch = dataset[0]
+        #         single = {k: v.unsqueeze(0) for k, v in batch.items()}
+        #         with torch.no_grad():
+        #             logit = _model(
+        #                 single["event_ids"], single["continuous_features"],
+        #                 single["minutes"], single["attention_mask"],
+        #             ).squeeze()
+        #             prob = torch.sigmoid(logit).item()
+        #         scored.append((prob, rec))
+        #     # Sort by probability descending — true positives (high prob) first
+        #     scored.sort(key=lambda x: x[0], reverse=True)
+        #     return [rec for _, rec in scored]
+        # rage_quit_recs = sort_rage_quits_by_confidence(model, rage_quit_recs)
+        # rage_quit_recs = sort_rage_quits_by_confidence(model, rage_quit_recs)
 
         ctrl1, ctrl2 = st.columns([1, 3])
         with ctrl1:
