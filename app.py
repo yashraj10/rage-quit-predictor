@@ -676,7 +676,37 @@ def main():
         with ic1:
             st.markdown('<div class="ic"><h4>How to Read This</h4><p>Brighter pills = higher model attention. The model extracts [CLS] → token attention from the final transformer layer, averaged across 4 heads. Faded events were ignored by the model.</p></div>', unsafe_allow_html=True)
         with ic2:
-            st.markdown('<div class="ic"><h4>What the Model Learns</h4><p>Death clusters followed by action droughts (going quiet after dying) consistently receive the highest attention. This pattern predicts rage quits within 3 minutes.</p></div>', unsafe_allow_html=True)
+            # Dynamic "What the Model Learns" based on current sequence
+            if recs and events and attn_weights is not None:
+                type_attn = {}
+                type_count = {}
+                for name, minute, pos in events:
+                    if pos < len(attn_weights):
+                        a = float(attn_weights[pos])
+                        type_attn[name] = type_attn.get(name, 0.0) + a
+                        type_count[name] = type_count.get(name, 0) + 1
+                avg_a = {n: type_attn[n]/type_count[n] for n in type_attn if type_count[n] > 0}
+                top2 = sorted(avg_a.items(), key=lambda x: x[1], reverse=True)[:2]
+                t1_name = short_name(top2[0][0]) if top2 else "—"
+                t2_name = short_name(top2[1][0]) if len(top2) > 1 else ""
+                t1_cls = pill_class(top2[0][0]) if top2 else "pip-neu"
+
+                if record["label"] == 1 and prob > 0.5:
+                    if t2_name:
+                        learn_text = f"<b class='{t1_cls}'>{t1_name}</b> and <b>{t2_name}</b> receive the highest attention in this sequence. The pattern: falling behind + going quiet = strongest quit predictor."
+                    else:
+                        learn_text = f"<b class='{t1_cls}'>{t1_name}</b> dominates attention. The model sees a clear disengagement signal."
+                elif record["label"] == 0 or prob <= 0.5:
+                    if t2_name:
+                        learn_text = f"<b class='{t1_cls}'>{t1_name}</b> and <b>{t2_name}</b> dominate attention — the model sees active, productive gameplay. No disengagement signals in this sequence."
+                    else:
+                        learn_text = f"<b class='{t1_cls}'>{t1_name}</b> dominates attention — the model sees stable gameplay."
+                else:
+                    learn_text = "Slide through examples to see how attention shifts between rage quit and normal game patterns."
+
+                st.markdown(f'<div class="ic"><h4>What the Model Learns</h4><p>{learn_text}</p></div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="ic"><h4>What the Model Learns</h4><p>APM drops and XP deficit signals consistently receive the highest attention in rage quit sequences. The pattern: falling behind + going quiet = strongest quit predictor.</p></div>', unsafe_allow_html=True)
         with ic3:
             st.markdown('<div class="ic"><h4>Why Attention Matters</h4><p>Unlike feature importance in tree models, attention shows which specific events in which order the model uses. It\'s sequence-level interpretability.</p></div>', unsafe_allow_html=True)
 
