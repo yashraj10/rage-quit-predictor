@@ -457,20 +457,20 @@ def main():
         if not m:
             st.warning("⚠ Run `python generate_results.py` first to compute metrics.")
 
-        # 5 metric cards from JSON
+        # ── FIX 1: Reordered — AUC-PR leads (primary metric for imbalanced data) ──
         c1,c2,c3,c4,c5 = st.columns(5)
         if m:
             cards = [
+                ("AUC-PR", f"{m['auc_pr']:.3f}", "★ primary", "#8b5cf6", "dlt-c"),
                 ("AUC-ROC", f"{m['auc_roc']:.3f}", "", "#10b981", ""),
-                ("AUC-PR", f"{m['auc_pr']:.3f}", "", "#8b5cf6", ""),
                 ("F1 Score", f"{m['f1']:.3f}", "", "#06b6d4", ""),
                 ("Precision", f"{m['precision']:.3f}", "", "#f43f5e", ""),
                 ("Recall", f"{m['recall']:.3f}", "", "#f59e0b", ""),
             ]
         else:
             cards = [
-                ("AUC-ROC", "—", "", "#10b981", ""),
                 ("AUC-PR", "—", "", "#8b5cf6", ""),
+                ("AUC-ROC", "—", "", "#10b981", ""),
                 ("F1 Score", "—", "", "#06b6d4", ""),
                 ("Precision", "—", "", "#f43f5e", ""),
                 ("Recall", "—", "", "#f59e0b", ""),
@@ -478,18 +478,18 @@ def main():
         for col, args in zip([c1,c2,c3,c4,c5], cards):
             with col: st.markdown(mcard(*args), unsafe_allow_html=True)
 
-        # ── NEW: Metric subtitles for non-gamers ──
+        # Metric subtitles — reordered to match new card order
         st.markdown("""
         <div style="display:flex; gap:12px; padding:6px 0 14px; border-bottom:1px solid #27272a; margin-bottom:0;">
-            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">How well the model ranks players overall</span>
             <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Ranking quality on the rare quit cases</span>
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">How well the model ranks players overall</span>
             <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Balance of catching quits vs false alarms</span>
             <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Of flagged players, how many actually quit</span>
             <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Of all quitters, how many were caught</span>
         </div>
         """, unsafe_allow_html=True)
 
-        # Dataset stats bar
+        # ── FIX 2: Removed threshold from stats bar ──
         if m:
             st.markdown(f"""
             <div style="display:flex; gap:24px; padding:12px 24px; font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#71717a; border-bottom:1px solid #27272a; margin-bottom:16px;">
@@ -497,7 +497,6 @@ def main():
                 <span>Positives: <span style="color:#f43f5e;">{m['total_positive']}</span></span>
                 <span>Negatives: <span style="color:#10b981;">{m['total_negative']:,}</span></span>
                 <span>Positive rate: <span style="color:#f59e0b;">{m['positive_rate']:.2%}</span></span>
-                <span>Threshold: <span style="color:#8b5cf6;">{m['optimal_threshold']:.3f}</span></span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -543,7 +542,7 @@ def main():
         with t2:
             st.markdown('<div class="sh">Evaluation Notes</div>', unsafe_allow_html=True)
             if m:
-                # ── UPDATED: Added plain-English framing for non-gamers ──
+                # ── FIX 2 continued: Added calibration note to Confusion Matrix card ──
                 for cls, q, a in [
                     ("rose", "Class Imbalance",
                      f"Positive rate is {m['positive_rate']:.2%} ({m['total_positive']} rage quits out of {m['total_samples']:,} samples). "
@@ -553,9 +552,11 @@ def main():
                      f"AUC-ROC ({m['auc_roc']:.3f}) looks strong but is inflated by {m['total_negative']:,} easy negatives. "
                      f"AUC-PR ({m['auc_pr']:.3f}) reveals the real precision-recall tradeoff on the minority class."),
                     ("amber", "Confusion Matrix",
-                     f"At threshold {m['optimal_threshold']:.3f}: {m['tp']} TP, {m['fp']} FP, {m['fn']} FN, {m['tn']:,} TN. "
+                     f"{m['tp']} TP, {m['fp']} FP, {m['fn']} FN, {m['tn']:,} TN. "
                      f"Accuracy: {m['accuracy']:.1%}. "
-                     f"In plain terms: the model correctly flagged {m['tp']} quitters, missed {m['fn']}, and falsely flagged {m['fp']} stable players."),
+                     f"In plain terms: the model correctly flagged {m['tp']} quitters, missed {m['fn']}, and falsely flagged {m['fp']} stable players. "
+                     f"Note: the high optimal threshold ({m['optimal_threshold']:.6f}) is a calibration artifact from aggressive class weighting (pos_weight ≈ 160). "
+                     "The model ranks correctly — probabilities need post-hoc calibration (e.g. Platt scaling)."),
                 ]:
                     st.markdown(f'<div class="dcd {cls}"><div class="q">{q}</div><div class="a">{a}</div></div>', unsafe_allow_html=True)
 
@@ -563,7 +564,7 @@ def main():
     # TAB 2: SEQUENCE EXPLORER
     # ══════════════════════════════════════════════════════════════════
     with tab2:
-        # ── NEW: Reading guide banner for non-gamers ──
+        # Reading guide banner for non-gamers
         st.markdown("""
         <div style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); padding:14px 20px; margin-bottom:16px; font-family:'Inter',sans-serif; font-size:0.8rem; color:#a1a1aa; line-height:1.6;">
             <b style="color:#8b5cf6;">Reading guide:</b> Each pill is something the player did in-game, ordered by time.
@@ -576,6 +577,29 @@ def main():
 
         rage_quit_recs = [r for r in test_recs if r["label"] == 1]
         normal_recs = [r for r in test_recs if r["label"] == 0]
+
+        # ── FIX 3: Sort rage quits so true positives (model got it right) appear first ──
+        # Quick pre-score all rage quit records to sort by predicted probability descending
+        @st.cache_data
+        def sort_rage_quits_by_confidence(_model, _recs):
+            """Score all rage quit records and return sorted by model confidence (highest first)."""
+            scored = []
+            for rec in _recs:
+                dataset = DotaMatchDataset([rec], max_seq_len=256)
+                batch = dataset[0]
+                single = {k: v.unsqueeze(0) for k, v in batch.items()}
+                with torch.no_grad():
+                    logit = _model(
+                        single["event_ids"], single["continuous_features"],
+                        single["minutes"], single["attention_mask"],
+                    ).squeeze()
+                    prob = torch.sigmoid(logit).item()
+                scored.append((prob, rec))
+            # Sort by probability descending — true positives (high prob) first
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [rec for _, rec in scored]
+
+        rage_quit_recs = sort_rage_quits_by_confidence(model, rage_quit_recs)
 
         ctrl1, ctrl2 = st.columns([1, 3])
         with ctrl1:
