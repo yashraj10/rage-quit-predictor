@@ -379,6 +379,59 @@ def build_attention_summary(events_with_minutes, attn_weights):
 # ═══════════════════════════════════════════════════════════════════════
 # APP
 # ═══════════════════════════════════════════════════════════════════════
+def generate_sequence_narrative(events_with_minutes, attn_weights, prob, label):
+    """Generate a 2-3 line dynamic explanation of what the model sees."""
+    if not events_with_minutes:
+        return ""
+
+    # Get top attention events
+    type_attn = {}
+    type_count = {}
+    for name, minute, pos in events_with_minutes:
+        if attn_weights is not None and pos < len(attn_weights):
+            a = float(attn_weights[pos])
+            type_attn[name] = type_attn.get(name, 0.0) + a
+            type_count[name] = type_count.get(name, 0) + 1
+    avg_attn = {n: type_attn[n]/type_count[n] for n in type_attn if type_count[n] > 0}
+    top = sorted(avg_attn.items(), key=lambda x: x[1], reverse=True)
+
+    # Count event categories
+    neg_count = sum(1 for n,_,_ in events_with_minutes if n in NEGATIVE)
+    wrn_count = sum(1 for n,_,_ in events_with_minutes if n in WARNING)
+    pos_count = sum(1 for n,_,_ in events_with_minutes if n in POSITIVE)
+    total = len(events_with_minutes)
+
+    # Build narrative
+    lines = []
+
+    # Line 1: What dominated the game
+    if neg_count + wrn_count > pos_count:
+        pct = int((neg_count + wrn_count) / total * 100)
+        lines.append(f"<span style='color:#FF2D55;'>⚠</span> <b>{pct}%</b> of this player's events were negative or warning signals.")
+    else:
+        pct = int(pos_count / total * 100)
+        lines.append(f"<span style='color:#00FF88;'>✦</span> <b>{pct}%</b> of events were positive — a relatively healthy game.")
+
+    # Line 2: What the model focused on
+    if top:
+        top_name = short_name(top[0][0])
+        top_cls = pill_class(top[0][0])
+        if len(top) > 1:
+            second_name = short_name(top[1][0])
+            lines.append(f"Model locked onto <span class='{top_cls}' style='font-weight:700;'>{top_name}</span> and <b>{second_name}</b> as key signals.")
+        else:
+            lines.append(f"Model locked onto <span class='{top_cls}' style='font-weight:700;'>{top_name}</span> as the dominant signal.")
+
+    # Line 3: The verdict
+    if prob > 0.5:
+        lines.append("<span style='color:#FF2D55;'>→</span> Pattern: declining performance + disengagement = predicted quit.")
+    elif prob > 0.2:
+        lines.append("<span style='color:#FFB800;'>→</span> Some warning signs, but not enough for a confident prediction.")
+    else:
+        lines.append("<span style='color:#00FF88;'>→</span> No strong quit indicators — model sees a stable player.")
+
+    return "<br>".join(lines)
+
 def main():
     model, best_epoch, best_auc_pr = load_model()
     test_recs = load_data()
@@ -424,6 +477,17 @@ def main():
             ]
         for col, args in zip([c1,c2,c3,c4,c5], cards):
             with col: st.markdown(mcard(*args), unsafe_allow_html=True)
+
+        # ── NEW: Metric subtitles for non-gamers ──
+        st.markdown("""
+        <div style="display:flex; gap:12px; padding:6px 0 14px; border-bottom:1px solid #27272a; margin-bottom:0;">
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">How well the model ranks players overall</span>
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Ranking quality on the rare quit cases</span>
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Balance of catching quits vs false alarms</span>
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Of flagged players, how many actually quit</span>
+            <span style="flex:1; text-align:center; font-size:0.68rem; color:#52525b; font-family:'Inter',sans-serif;">Of all quitters, how many were caught</span>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Dataset stats bar
         if m:
@@ -479,16 +543,19 @@ def main():
         with t2:
             st.markdown('<div class="sh">Evaluation Notes</div>', unsafe_allow_html=True)
             if m:
+                # ── UPDATED: Added plain-English framing for non-gamers ──
                 for cls, q, a in [
                     ("rose", "Class Imbalance",
                      f"Positive rate is {m['positive_rate']:.2%} ({m['total_positive']} rage quits out of {m['total_samples']:,} samples). "
-                     "The strict 3-part label (abandoned + early leave + losing team) creates severe imbalance."),
+                     "The strict 3-part label (abandoned + early leave + losing team) creates severe imbalance. "
+                     "Think of it like fraud detection — the event you're predicting is rare, which makes the problem harder."),
                     ("violet", "Why AUC-PR matters more",
                      f"AUC-ROC ({m['auc_roc']:.3f}) looks strong but is inflated by {m['total_negative']:,} easy negatives. "
                      f"AUC-PR ({m['auc_pr']:.3f}) reveals the real precision-recall tradeoff on the minority class."),
                     ("amber", "Confusion Matrix",
                      f"At threshold {m['optimal_threshold']:.3f}: {m['tp']} TP, {m['fp']} FP, {m['fn']} FN, {m['tn']:,} TN. "
-                     f"Accuracy: {m['accuracy']:.1%}."),
+                     f"Accuracy: {m['accuracy']:.1%}. "
+                     f"In plain terms: the model correctly flagged {m['tp']} quitters, missed {m['fn']}, and falsely flagged {m['fp']} stable players."),
                 ]:
                     st.markdown(f'<div class="dcd {cls}"><div class="q">{q}</div><div class="a">{a}</div></div>', unsafe_allow_html=True)
 
@@ -496,6 +563,17 @@ def main():
     # TAB 2: SEQUENCE EXPLORER
     # ══════════════════════════════════════════════════════════════════
     with tab2:
+        # ── NEW: Reading guide banner for non-gamers ──
+        st.markdown("""
+        <div style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); padding:14px 20px; margin-bottom:16px; font-family:'Inter',sans-serif; font-size:0.8rem; color:#a1a1aa; line-height:1.6;">
+            <b style="color:#8b5cf6;">Reading guide:</b> Each pill is something the player did in-game, ordered by time.
+            <span style="color:#00FF88;">Green</span> = good performance,
+            <span style="color:#FF2D55;">Red</span> = bad outcome,
+            <span style="color:#FFB800;">Yellow</span> = warning sign.
+            Brighter pills = the model paid more attention to that event when making its prediction.
+        </div>
+        """, unsafe_allow_html=True)
+
         rage_quit_recs = [r for r in test_recs if r["label"] == 1]
         normal_recs = [r for r in test_recs if r["label"] == 0]
 
@@ -537,13 +615,38 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown(build_attention_timeline(events, attn_weights, max_events=35), unsafe_allow_html=True)
+            # ── Timeline + Narrative side by side ──
+            col_timeline, col_narrative = st.columns([3, 1])
 
-       
+            with col_timeline:
+                st.markdown(build_attention_timeline(events, attn_weights, max_events=35), unsafe_allow_html=True)
+
+            with col_narrative:
+                narrative = generate_sequence_narrative(events, attn_weights, prob, record["label"])
+                st.markdown(f"""
+                <div style="background:#18181b; border:1px solid #27272a; padding:20px; height:100%;">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:#71717a; text-transform:uppercase; letter-spacing:2px; margin-bottom:14px;">What's Happening</div>
+                    <div style="font-family:'Inter',sans-serif; font-size:0.82rem; color:#a1a1aa; line-height:1.8;">
+                        {narrative}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown('<div class="sh" style="margin-top:20px;">Model Attention Focus</div>', unsafe_allow_html=True)
             summary_html = build_attention_summary(events, attn_weights)
             if summary_html:
-                st.html(summary_html)
+                import streamlit.components.v1 as components
+                components.html(f"""
+                <style>
+                .ev {{ display:inline-block; white-space:nowrap; }}
+                .ev.pip-pos {{ color:#00FF88; }} .ev.pip-neg {{ color:#FF2D55; }}
+                .ev.pip-wrn {{ color:#FFB800; }} .ev.pip-neu {{ color:#a1a1aa; }}
+                </style>
+                <div style="background:#09090b; padding:0; font-family:'JetBrains Mono',monospace;">
+                    {summary_html}
+                </div>
+                """, height=80, scrolling=False)
+
         st.markdown("<br>", unsafe_allow_html=True)
         ic1, ic2, ic3 = st.columns(3)
         with ic1:
