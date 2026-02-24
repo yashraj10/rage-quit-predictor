@@ -1,8 +1,7 @@
 """
 Attention extraction and visualization for model interpretability.
 
-This is the most interview-friendly part of the project — it produces visual
-evidence of what the model learned. The key finding to aim for:
+This code produces visual evidence of what the model learned. The key finding to aim for:
 "The model consistently attends to death streaks followed by action droughts,
 which matches the intuitive rage quit pattern."
 """
