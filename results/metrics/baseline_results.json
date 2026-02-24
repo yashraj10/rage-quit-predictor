@@ -1,0 +1,50 @@
+{
+  "logistic_regression": {
+    "auc_roc": 0.8842068439129882,
+    "auc_pr": 0.17312202730301085,
+    "f1": 0.2828282828282828,
+    "precision": 0.19718309859154928,
+    "recall": 0.5,
+    "accuracy": 0.9842920353982301,
+    "optimal_threshold": 0.9642672354949159,
+    "threshold_used": 0.9642672354949159,
+    "precision_at_100": 0.15,
+    "precision_at_50": 0.2,
+    "true_positives": 14,
+    "false_positives": 57,
+    "true_negatives": 4435,
+    "false_negatives": 14,
+    "num_samples": 4520,
+    "num_positive": 28
+  },
+  "transformer": {
+    "auc_roc": 0.8821595534919221,
+    "auc_pr": 0.1914986908584237,
+    "f1": 0.3561643835616438,
+    "precision": 0.28888888888888886,
+    "recall": 0.4642857142857143,
+    "accuracy": 0.9896017699115044,
+    "optimal_threshold": 0.9999898672103882,
+    "threshold_used": 0.9999898672103882,
+    "precision_at_100": 0.18,
+    "precision_at_50": 0.26,
+    "true_positives": 13,
+    "false_positives": 32,
+    "true_negatives": 4460,
+    "false_negatives": 15,
+    "num_samples": 4520,
+    "num_positive": 28
+  },
+  "best_epoch": 14,
+  "val_auc_pr_at_save": 0.3063666425825885,
+  "model_config": {
+    "vocab_size": 22,
+    "embed_dim": 128,
+    "num_heads": 4,
+    "num_layers": 4,
+    "num_continuous_features": 6,
+    "ff_dim": 512,
+    "max_seq_len": 256,
+    "dropout": 0.1
+  }
+}

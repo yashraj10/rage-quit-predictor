@@ -1,4 +1,3 @@
-"""Phase 6: Rage Quit Predictor — Real functionality + Figma visual design."""
 import json
 import pickle
 from pathlib import Path
@@ -527,7 +526,7 @@ def main():
                     <tr><th style="text-align:left">Model</th><th>Prec</th><th>Recall</th><th>F1</th><th>AUC-ROC</th><th>AUC-PR</th></tr>
                     <tr>
                         <td class="nm">Logistic Reg</td>
-                        <td>0.197</td><td>0.283</td><td>0.283</td><td>0.884</td><td>0.173</td>
+                        <td>0.197</td><td>0.500</td><td>0.283</td><td>0.884</td><td>0.173</td>
                     </tr>
                     <tr style="background:rgba(39,39,42,0.2)">
                         <td class="tf">● Transformer</td>
