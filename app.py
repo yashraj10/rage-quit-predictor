@@ -147,8 +147,7 @@ def load_model():
 @st.cache_data
 def load_data():
     with open("data/processed/test_sequences.pkl", "rb") as f:
-        test_recs = pickle.load(f)
-    return test_recs
+        return pickle.load(f)
 
 @st.cache_data
 def load_metrics():
@@ -156,6 +155,22 @@ def load_metrics():
     metrics_path = Path("results/metrics/test_metrics.json")
     if metrics_path.exists():
         with open(metrics_path) as f:
+            return json.load(f)
+    return None
+
+def load_baseline_metrics():
+    """Load baseline metrics from JSON — single source of truth."""
+    path = Path("results/metrics/baseline_results.json")
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+def load_lstm_metrics():
+    """Load LSTM metrics from JSON — single source of truth."""
+    path = Path("results/metrics/lstm_results.json")
+    if path.exists():
+        with open(path) as f:
             return json.load(f)
     return None
 
@@ -435,6 +450,8 @@ def main():
     model, best_epoch, best_auc_pr = load_model()
     test_recs = load_data()
     m = load_metrics()
+    bl = load_baseline_metrics()
+    lstm = load_lstm_metrics()
 
     # Navbar
     st.markdown("""
@@ -520,13 +537,21 @@ def main():
         t1, t2 = st.columns([1, 1])
         with t1:
             st.markdown('<div class="sh">Model Comparison</div>', unsafe_allow_html=True)
-            if m:
+            if m and bl and lstm:
                 st.markdown(f"""
                 <table class="ct">
                     <tr><th style="text-align:left">Model</th><th>Prec</th><th>Recall</th><th>F1</th><th>AUC-ROC</th><th>AUC-PR</th></tr>
                     <tr>
                         <td class="nm">Logistic Reg</td>
-                        <td>0.197</td><td>0.500</td><td>0.283</td><td>0.884</td><td>0.173</td>
+                        <td>{bl['logistic_regression']['precision']:.3f}</td><td>{bl['logistic_regression']['recall']:.3f}</td><td>{bl['logistic_regression']['f1']:.3f}</td><td>{bl['logistic_regression']['auc_roc']:.3f}</td><td>{bl['logistic_regression']['auc_pr']:.3f}</td>
+                    </tr>
+                    <tr>
+                        <td class="nm">XGBoost</td>
+                        <td>{bl['xgboost']['precision']:.3f}</td><td>{bl['xgboost']['recall']:.3f}</td><td>{bl['xgboost']['f1']:.3f}</td><td>{bl['xgboost']['auc_roc']:.3f}</td><td>{bl['xgboost']['auc_pr']:.3f}</td>
+                    </tr>
+                    <tr>
+                        <td class="nm">LSTM</td>
+                        <td>{lstm['precision']:.3f}</td><td>{lstm['recall']:.3f}</td><td>{lstm['f1']:.3f}</td><td>{lstm['auc_roc']:.3f}</td><td>{lstm['auc_pr']:.3f}</td>
                     </tr>
                     <tr style="background:rgba(39,39,42,0.2)">
                         <td class="tf">● Transformer</td>
@@ -554,7 +579,7 @@ def main():
                      f"{m['tp']} TP, {m['fp']} FP, {m['fn']} FN, {m['tn']:,} TN. "
                      f"Accuracy: {m['accuracy']:.1%}. "
                      f"In plain terms: the model correctly flagged {m['tp']} quitters, missed {m['fn']}, and falsely flagged {m['fp']} stable players. "
-                     f"Note: the high optimal threshold ({m['optimal_threshold']:.6f}) is a calibration artifact from aggressive class weighting (pos_weight ≈ 160). "
+                     "Note: the high optimal threshold is a calibration artifact from aggressive class weighting (pos_weight ≈ 160). "
                      "The model ranks correctly — probabilities need post-hoc calibration (e.g. Platt scaling)."),
                 ]:
                     st.markdown(f'<div class="dcd {cls}"><div class="q">{q}</div><div class="a">{a}</div></div>', unsafe_allow_html=True)
