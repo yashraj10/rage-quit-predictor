@@ -570,7 +570,7 @@ def main():
                 for cls, q, a in [
                     ("rose", "Class Imbalance",
                      f"Positive rate is {m['positive_rate']:.2%} ({m['total_positive']} rage quits out of {m['total_samples']:,} samples). "
-                     "The strict 3-part label (abandoned + early leave + losing team) creates severe imbalance. "
+                     "The strict 2-part label (abandoned + losing team) creates severe imbalance. "
                      "Think of it like fraud detection — the event you're predicting is rare, which makes the problem harder."),
                     ("violet", "Why AUC-PR matters more",
                      f"AUC-ROC ({m['auc_roc']:.3f}) looks strong but is inflated by {m['total_negative']:,} easy negatives. "
