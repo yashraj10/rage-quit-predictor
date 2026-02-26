@@ -2,9 +2,9 @@
 
 **A custom PyTorch transformer that predicts when a Dota 2 player is about to rage quit — before they leave the match.**
 
-## 🔴 [Live Demo](https://rage-quit-predictor.streamlit.app)
+## 🔴 [Live Demo — Streamlit](https://rage-quit-predictor.streamlit.app) &nbsp;|&nbsp; 🤗 [Live Demo — HuggingFace Spaces](https://huggingface.co/spaces/yashraj10/rage-quit-predictor)
 
-> App may take ~30s to wake up on first load (Streamlit Cloud free tier).
+> Streamlit app may take ~30s to wake up on first load (free tier).
 
 This is a user retention / churn prediction problem solved with behavioral event sequence modeling. The same architecture generalizes to any product with session-level behavioral data (music listening patterns, ride-request behavior, browsing sessions).
 
@@ -14,12 +14,16 @@ This is a user retention / churn prediction problem solved with behavioral event
 
 | Model | AUC-PR ★ | AUC-ROC | F1 | Precision | Recall |
 |-------|----------|---------|------|-----------|--------|
-| Logistic Regression | 0.173 | 0.884 | 0.283 | 0.197 | 0.283 |
-| **Transformer (ours)** | **0.192** | **0.882** | **0.356** | **0.289** | **0.464** |
+| Logistic Regression | 0.247 | 0.931 | 0.420 | 0.415 | 0.426 |
+| XGBoost | 0.268 | 0.914 | 0.395 | 0.422 | 0.372 |
+| LSTM | 0.256 | 0.954 | 0.370 | 0.324 | 0.432 |
+| **Transformer (ours)** | **0.269** | **0.928** | **0.422** | **0.395** | **0.454** |
 
-**★ AUC-PR is the primary metric.** With a 0.62% positive rate (28 rage quits in 4,520 test samples), AUC-ROC is inflated by easy negatives. AUC-PR reveals the real precision-recall tradeoff on the minority class — similar to fraud detection or rare disease screening.
+Evaluated on 30,020 test sequences · 183 positives · 29,837 negatives · **0.61% positive rate**
 
-**Why the transformer wins:** Not on aggregate metrics (the 0.019 AUC-PR lift isn't statistically significant on 28 positives), but on **interpretability**. Attention heatmaps show *which events in which order* predict rage quits — something logistic regression on aggregated features fundamentally cannot do.
+**★ AUC-PR is the primary metric.** With a 0.61% positive rate, AUC-ROC is inflated by 29,837 easy negatives. AUC-PR reveals the real precision-recall tradeoff on the minority class — similar to fraud detection or rare disease screening.
+
+**Why the transformer wins:** Not just on aggregate metrics, but on **interpretability**. Attention heatmaps show *which events in which order* predict rage quits — something logistic regression on aggregated features fundamentally cannot do. The model learns that declining performance + disengagement (APM drops + XP deficit) is the strongest quit signal.
 
 ---
 
@@ -32,7 +36,7 @@ Event Sequence → Token Embedding + Continuous Feature Projection + Game-Time P
     → Classification Head (128 → 64 → 1) → P(rage_quit)
 ```
 
-**849,793 parameters · 22 event tokens · 6 continuous features per token**
+**849,793 parameters · 22 event tokens · 6 continuous features per token · Best epoch: 4**
 
 **What makes this interesting:**
 - **NOT text NLP** — applies transformer attention to behavioral event sequences with custom tokenization
@@ -66,7 +70,7 @@ A player is labeled as a rage quit if:
 - `leaver_status >= 2` (abandoned or AFK)
 - AND their team was losing at time of departure
 
-This strict 3-part filter isolates frustration-driven departures but creates severe class imbalance: **0.62% positive rate** (vs the ~5% you'd get with just `leaver_status >= 2`). This is deliberately aggressive — cleaner labels at the cost of fewer examples. The tradeoff is similar to fraud detection: the event you're predicting is rare, which makes evaluation fragile.
+This strict filter isolates frustration-driven departures but creates severe class imbalance: **0.61% positive rate**. This is deliberately aggressive — cleaner labels at the cost of fewer examples. The tradeoff is similar to fraud detection: the event you're predicting is rare, which makes evaluation fragile.
 
 ### What the Model Learns
 Attention analysis across correctly predicted rage quits reveals a consistent pattern:
@@ -76,14 +80,19 @@ Attention analysis across correctly predicted rage quits reveals a consistent pa
 
 This matches game design intuition: players who are losing AND stop trying are the most likely to abandon.
 
-## Streamlit Demo
+## Live Demos
 
-The live app includes three views:
+Two hosted deployments of the same app, both with all three views:
+
+| Platform | URL | Notes |
+|----------|-----|-------|
+| Streamlit Cloud | https://rage-quit-predictor.streamlit.app | May take ~30s to wake on first load |
+| HuggingFace Spaces | https://huggingface.co/spaces/yashraj10/rage-quit-predictor | Always-on, faster cold start |
 
 ### Performance Metrics
 - AUC-PR leads as primary metric with ★ badge
 - ROC and Precision-Recall curves, confusion matrix, event importance chart
-- Model comparison (Transformer vs Logistic Regression)
+- Full model comparison: Transformer vs Logistic Regression vs XGBoost vs LSTM
 - Evaluation notes explaining class imbalance, metric choices, and probability calibration
 
 ### Sequence Explorer
@@ -95,7 +104,7 @@ The live app includes three views:
 - Rage quit examples sorted by model confidence — true positives first
 - Reading guide banner for non-technical viewers
 
-> Demo displays all 28 rage quit examples and a 50-sample subset of normal games to fit Streamlit Cloud's free tier memory limits. All metrics are computed on the full 4,520-sample test set.
+> Demo displays all 183 rage quit examples from the test set. All metrics are computed on the full 30,020-sample test set.
 
 ### Model Architecture
 - Visual architecture diagram with design decision explanations
@@ -115,7 +124,7 @@ rage-quit-predictor/
 │   ├── transformer.py      # RageQuitTransformer (849K params)
 │   ├── train.py            # Training pipeline (warmup, early stopping)
 │   ├── evaluate.py         # AUC-ROC, AUC-PR, F1, confusion matrix
-│   ├── baselines.py        # Logistic Regression baseline
+│   ├── baselines.py        # Logistic Regression, XGBoost, LSTM baselines
 │   └── attention.py        # Attention extraction & visualization
 ├── generate_results.py     # Compute all metrics + figures from test set
 ├── configs/
@@ -170,15 +179,15 @@ streamlit run app.py
 
 **Why [CLS] pooling?** Allows the model to learn a global summary representation and enables clean attention extraction for interpretability.
 
-**Why AUC-PR as primary metric?** With 0.62% positive rate, AUC-ROC is inflated by 4,492 easy negatives. AUC-PR focuses on the minority class, which is what matters for deployment decisions.
+**Why AUC-PR as primary metric?** With 0.61% positive rate, AUC-ROC is inflated by 29,837 easy negatives. AUC-PR focuses on the minority class, which is what matters for deployment decisions.
 
-**Why the strict label filter?** The 3-part filter (abandoned + early leave + losing team) prioritizes label quality over quantity. The tradeoff: only 28 test positives, making evaluation fragile. With more data collection, this would be the first thing to revisit — either relaxing the losing-team requirement or making it a soft feature.
+**Why the strict label filter?** The 2-part filter (abandoned + losing team) prioritizes label quality over quantity. The tradeoff: 183 test positives out of 30,020, making evaluation meaningful but still imbalanced. With more data collection, relaxing the losing-team requirement would be the first thing to revisit.
 
 ## Known Limitations & Next Steps
 
-**Probability calibration:** `pos_weight ≈ 160` compresses probabilities into [0.999, 1.0], causing the F1-optimal threshold to land at 0.999990. The model *ranks* correctly but probabilities need post-hoc calibration (Platt scaling or temperature scaling).
+**Probability calibration:** `pos_weight ≈ 160` compresses probabilities into [0.999, 1.0], causing the F1-optimal threshold to land at 0.999963. The model *ranks* correctly but probabilities need post-hoc calibration (Platt scaling or temperature scaling).
 
-**Small positive test set:** 28 positives means metrics have wide confidence intervals (~±0.05 on AUC-PR). Bootstrap CIs would improve evaluation credibility. K-fold stratified CV on the full dataset would give more robust estimates.
+**Evaluation fragility:** 183 positives gives reasonable but not tight confidence intervals on AUC-PR. Bootstrap CIs would improve evaluation credibility. K-fold stratified CV on the full dataset would give more robust estimates.
 
 **Truncation direction:** Currently truncates late-game events when sequences exceed 256 tokens. For rage quit prediction, the most recent events matter most — truncating from the start (keeping the last 256 events) would likely improve recall.
 
@@ -188,6 +197,6 @@ streamlit run app.py
 
 ## Deployment Considerations
 
-For real-time use: batch the last N events per player, run inference every 30 seconds, trigger intervention when P(rage_quit) crosses threshold. With F1 of 0.356 (29% precision), this is suitable for **soft interventions** — team encouragement messages, matchmaking priority adjustments — where the cost of a false positive is near zero. Hard interventions would require F1 > 0.50 with precision > 0.40, achievable with more data and calibration.
+For real-time use: batch the last N events per player, run inference every 30 seconds, trigger intervention when P(rage_quit) crosses threshold. With F1 of 0.422 (39.5% precision), this is suitable for **soft interventions** — team encouragement messages, matchmaking priority adjustments — where the cost of a false positive is near zero. Hard interventions would require F1 > 0.50 with precision > 0.40, achievable with more data and calibration.
 
 This maps directly to production retention systems at companies like Spotify, Uber, or Airbnb — predict disengagement from behavioral sequences, intervene before the user churns.
