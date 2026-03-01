@@ -1,0 +1,13 @@
+{
+  "quantized_modules": ["classifier", "token_embedding.combine", "token_embedding.continuous_proj"],
+  "not_quantized": "TransformerEncoder (incompatible with torch.quantization.quantize_dynamic due to norm_first=True)",
+  "fp32_latency_ms": 329.6,
+  "int8_latency_ms": 369.4,
+  "speedup_x": 0.89,
+  "fp32_size_mb": 3.4,
+  "int8_size_mb": 3.4,
+  "amp_speedup_x": 2.47,
+  "amp_peak_vram_gb": 0.76,
+  "conclusion": "Partial INT8 quantization shows no benefit. AMP gives 2.47x speedup. Full INT8 requires torchao migration.",
+  "interview_note": "Quantization only helps when applied to the dominant compute path. Partial quantization adds overhead without benefit."
+}
