@@ -78,6 +78,7 @@ mlops/
 
 ## Architecture
 
+![MLOps Architecture](docs/screenshots/architecture_diagram.png)
 ```
 Event Sequence → Token Embedding + Continuous Feature Projection + Game-Time Positional Encoding
     → Transformer Encoder (4 layers, 4 heads, 128-dim)
