@@ -1,0 +1,24 @@
+{
+  "avg_gold_diff": {
+    "psi": 0.7658,
+    "status": "\u274c FAIL"
+  },
+  "death_count": {
+    "psi": 1.5468,
+    "status": "\u274c FAIL"
+  },
+  "event_count": {
+    "psi": 2.0081,
+    "status": "\u274c FAIL"
+  },
+  "xp_deficit_rate": {
+    "psi": 4.2901,
+    "status": "\u274c FAIL"
+  },
+  "segment_rank": {
+    "psi": 2.3298,
+    "status": "\u274c FAIL"
+  },
+  "overall_pass": false,
+  "drift_level": "high"
+}
