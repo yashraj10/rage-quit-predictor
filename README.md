@@ -61,6 +61,19 @@ mlops/
 - **S3 bucket:** `s3://rage-quit-mlops-yashraj` — model v1 (10MB) + metrics live
 - **MLflow:** 2 registered model versions, experiment ID 1, AUC-PR tracked per epoch
 
+### MLOps Screenshots
+
+**MLflow — Training Runs**
+![MLflow Training Runs](docs/screenshots/mlflow_runs.png)
+
+**MLflow — Run Metrics (test_auc_pr: 0.2691, linked to git commit 565a227)**
+![MLflow Metrics](docs/screenshots/mlflow_metrics.png)
+
+**MLflow — Model Registry (RageQuitTransformer v2, Production: v1)**
+![MLflow Registry](docs/screenshots/mlflow_registry.png)
+
+**AWS S3 — 4-Tier Data Lake**
+![S3 Bucket](docs/screenshots/s3_bucket.png)
 ---
 
 ## Architecture
