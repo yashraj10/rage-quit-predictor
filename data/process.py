@@ -161,17 +161,8 @@ class MatchProcessor:
         if leaver_status < 2:
             return 0
 
-        # Check if player's team was losing
-        slot = player.get("player_slot", 0)
-        player_is_radiant = is_radiant(slot)
-        team_won = (player_is_radiant and radiant_win) or (
-            not player_is_radiant and not radiant_win
-        )
-
-        # If they abandoned but their team won, less likely rage quit
-        if team_won:
-            return 0
-
+        # Relaxed label: leaver_status >= 2 is sufficient signal
+        # Removing team_won filter to increase positive samples
         return 1
 
     def _process_player(
